@@ -1,0 +1,509 @@
+---
+title: "ANLY503_assignment2"
+author: "Christopher Fiaschetti"
+date: "6/14/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+#install.packages("webshot")
+#webshot::install_phantomjs()
+```
+
+## Introduction 
+
+The most popular sport in the world is football/soccer (cricket is close behind as well, I know). Every four years, 32 of the globe's best countries, soccer-wise, congregate to compete and see who has produced the best group of footballers. This is known as the FIFA World Cup. It is a grand event that takes place over a month. During the years preceeding the world cup, countries go through qualifying stages to see if they are worthy to compete in the tournament. Some years, like 2018 for the USA, a nation could see their team fall in the last round of the qualifiers and have to wait another five years to possibly see their team compete in the world largest sporting competition.
+
+Once qualified, Teams start in group stages. Four countries to a group and they all play each other once. They recieve three points for a win, one each for a tie, and none for a loss. After the teams play each other, the top two teams from each group advance into knockout rounds until a champion is eventually crowned. Youth footballers dream of one day scoring the winner in the final match. As of 2020, Brazil has accumulated the most championships (5). Germany and Italy are tied for the next most with 4 each, followed by Urugauy, Argentina, and the most recent champion (France) with 2 apiece. 
+
+Prior to the 2018 world cup, fivethirtyeight took it upon themselves to simulate and predict how that world cup would go. Of course, everyone wants to know who the eventual winner would be. Bettors look to make a quick buck on some bets, while fans want to know how much emotional value they should invest into their team's campaign. National economies also are interested in this metric. If a country is expected to be good, that could mean an increase in tourism, parades for victories, babies concieved (seriously, there's been some correlation between country success and conception rates - https://foreignpolicy.com/2017/03/28/icelands-historic-baby-boom-comes-nine-months-after-surprise-euro-cup-2016-win-soccer-football-sports-birth-rates/), merchandise for the country and publicity overall, just to name a few things. As such, countries must be adequately prepaired for victories and successes. 
+
+
+# About the Data
+```{r}
+# Load Packages and Data
+library(readr)
+wc_forecasts <- read.csv("world-cup-2018/wc_forecasts.csv")
+names(wc_forecasts)
+library(dplyr)
+library(ggplot2)
+library(DT)
+```
+
+```{r}
+#examine data
+#table(wc_forecasts$forecast_timestamp)
+tempdf = data.frame(table(wc_forecasts$forecast_timestamp))
+tempdf$date = "nan"
+for (i in 1:nrow(tempdf)){
+  tempdf$date[i] = strsplit(toString(tempdf$Var1[i]), " ")[[1]][1]
+}
+p<-ggplot(data=tempdf, aes(x=date, y=Freq)) +
+  geom_bar(stat="identity") + theme_minimal() +  ggtitle("Countries per Prediction Date") + theme(plot.title = element_text(hjust = .5)) + labs(x = "Dates", y = "Countries") + expand_limits(y=c(0, 40))  +geom_text(aes(label=Freq), position=position_dodge(width=0.9), vjust=-0.25)
+p
+
+
+#table(wc_forecasts$team)
+tempdf_t = data.frame(table(wc_forecasts$team))
+p0<-ggplot(data=tempdf_t, aes(x=Var1, y=Freq)) +
+  geom_bar(stat="identity") + theme_minimal() +  ggtitle("Number of Teams") + theme(plot.title = element_text(hjust = .5)) + labs(x = "Counts", y = "Teams") + expand_limits(y=c(0, 10))  +geom_text(aes(label=Freq), position=position_dodge(width=0.9), hjust=-2)
+p0 = p0 + coord_flip()
+p0
+```
+
+As we can see from the Figure 1, there were eight different forcastings done by fivethirtyeight. The data type was originally Factor for the timestamps. For easier understanding, that has been switched to character and only the date is shown in the bar chart instead of datetime. Each one of them has 32 rows. This means that all 32 countries that participated in the 2018 World Cup should have 8 records each of prediction. However, there are some issues that, as can be seen in Figure 2. Not all countries have 8 predictions. There are some missing values as well as values such as "Apple", "Bannana", "Not Brazil", and even "12" for some of these records. As such, we cannot work with them and should remove them from our dataset. 
+
+```{r}
+# remove countries that do not have the right amount of records associated with them
+World_cup_table =  data.frame(table(wc_forecasts$team))
+for (i in 1:nrow(World_cup_table)){
+  if (as.numeric(World_cup_table$Freq[i]) <7){
+    wc_forecasts = wc_forecasts[wc_forecasts$team != World_cup_table$Var1[i],]
+  }
+}
+```
+
+
+```{r}
+#table(wc_forecasts$forecast_timestamp)
+tempdf = data.frame(table(wc_forecasts$forecast_timestamp))
+tempdf$date = "nan"
+for (i in 1:nrow(tempdf)){
+  tempdf$date[i] = strsplit(toString(tempdf$Var1[i]), " ")[[1]][1]
+}
+p<-ggplot(data=tempdf, aes(x=date, y=Freq)) +
+  geom_bar(stat="identity") + theme_minimal() +  ggtitle("Countries per Prediction Date") + theme(plot.title = element_text(hjust = .5)) + labs(x = "Dates", y = "Countries") + expand_limits(y=c(0, 40))  +geom_text(aes(label=Freq), position=position_dodge(width=0.9), vjust=-0.25)
+p
+
+```
+After cleaning the data, there are now missing 12 records from the first prediction.
+
+```{r}
+sub_world_cup = wc_forecasts[wc_forecasts$forecast_timestamp == "2018-06-13 15:00:46 UTC",]
+temp_sub = head(sub_world_cup)
+datatable(temp_sub)
+sub_world_cup$sim_ties = as.character(sub_world_cup$sim_ties)
+bp<- ggplot(sub_world_cup, aes(x="", y=sim_wins, fill=sim_ties))+
+geom_bar(width = 1, stat = "identity")
+pie <- bp + coord_polar("y", start=0)
+pie
+
+```
+
+Just from looking at the head of the data from the first prediction date, we can see issues. there are missing values in global_d and sim_wins. Additionally, there is a value for sim_ties that says "Hi Tom!". Weird! That column is also a factor, when it needs to be numeric. We need to make some adjustments. First, let's keep only the complete cases.
+
+```{r}
+sub_world_cup2 = sub_world_cup[complete.cases(sub_world_cup),]
+nrow(sub_world_cup2)
+```
+
+After adjusting for complete cases of the group, there are only 7 rows left. Now, let's make sure there are valid responses for each column. 
+
+```{r}
+p = sapply(sub_world_cup2, class)
+y = data.frame(p)
+datatable(y, options = list(pageLength = 20))
+```
+
+sim_ties, goals_scored, and make_semis are still factors that should be numeric. Let's take a look at what they're comprised of. 
+
+```{r}
+unique(as.character(sub_world_cup2$sim_ties))
+unique(as.character(sub_world_cup2$goals_scored))
+unique(as.character(sub_world_cup2$make_semis))
+```
+
+While make_semis and goals_scored are cleaned and could be made into numerics, sim_ties still is not and has "Hi Tom!" in it. We need to remove that row
+
+```{r}
+sub_world_cup3 = sub_world_cup2[sub_world_cup2$sim_ties != "Hi Tom!",]
+nrow(sub_world_cup3)
+```
+
+That leaves us only with 8 rows. As such, it was determined that the predictions on 2018-06-13 15:00:46 UTC are not useful and should be thrown out. 
+
+```{r}
+wc_forecasts = wc_forecasts[wc_forecasts$forecast_timestamp != "2018-06-13 15:00:46 UTC",]
+tempdf = data.frame(table(wc_forecasts$forecast_timestamp))
+tempdf$date = "nan"
+for (i in 1:nrow(tempdf)){
+  tempdf$date[i] = strsplit(toString(tempdf$Var1[i]), " ")[[1]][1]
+}
+p<-ggplot(data=tempdf, aes(x=date, y=Freq)) +
+  geom_bar(stat="identity") + theme_minimal() +  ggtitle("Countries per Prediction Date") + theme(plot.title = element_text(hjust = .5)) + labs(x = "Dates", y = "Countries") + expand_limits(y=c(0, 40))  +geom_text(aes(label=Freq), position=position_dodge(width=0.9), vjust=-0.25)
+p
+#str(wc_forecasts)
+```
+
+
+```{r}
+wc_forecasts$team = as.character(wc_forecasts$team)
+wc_forecasts$group = as.character(wc_forecasts$group)
+wc_forecasts$sim_ties = as.numeric(wc_forecasts$sim_ties)
+wc_forecasts$goals_scored = as.numeric(wc_forecasts$goals_scored)
+wc_forecasts$make_semis = as.numeric(wc_forecasts$make_semis)
+wc_forecasts$forecast_timestamp = as.Date(wc_forecasts$forecast_timestamp, format = "%Y-%m-%d %H:%M:%OS")
+#str(wc_forecasts)
+```
+
+
+```{r}
+wc_forecasts = wc_forecasts[ , !(names(wc_forecasts) %in% "timestamp")] 
+str(wc_forecasts)
+```
+
+There are still some columns as factors that should be numeric or character. As such, adjustments needed to be made and were. Additionally, columns such as "timestamp" were removed, as no insights were provided from them. With forecast_timestamp, team, group, spi, sim_ties, goals_scored, make_semis and timestamp cleaned or removed, the remaining parameters needed to be addressed. 
+
+```{r}
+plot1 <- ggplot(wc_forecasts, aes(x=team, y=sim_goal_diff)) + geom_violin(fill='#A4A4A4', color="darkred") + geom_boxplot(width=0.1) + ggtitle("Simulated Goal Difference by Team") + theme(plot.title = element_text(hjust = .5)) 
+plot1
+plot2 <- ggplot(wc_forecasts, aes(x=team, y=goals_scored)) + geom_violin(fill='#A4A4A4', color="darkred") + geom_boxplot(width=0.1) + ggtitle("Simulated Goals Scored by Team") + theme(plot.title = element_text(hjust = .5)) 
+plot2
+plot3 <- ggplot(wc_forecasts, aes(x=team, y=goals_against)) + geom_violin(fill='#A4A4A4', color="darkred") + geom_boxplot(width=0.1) + ggtitle("Simulated Goals Against by Team") + theme(plot.title = element_text(hjust = .5)) 
+plot3
+```
+
+In the figure ablove violin plots for the simulated goal difference, goals scored, and goals against can be seen. A few insights can be gleened here. First, it shows that the different similations produced different numbers each time. Otherwise, we would see dots at one location for each team. This is good to know that everything was different. Next we can see how goal difference can be different for certain types of teams. A highly positive goal difference can come from medium goals scored and low goals against or high goals scored and medium goals against. 
+
+
+Taking a look at the distribution of spi - Soccer Power Index - for each country.
+
+```{r}
+hist(wc_forecasts$spi, main = "SPI Histogram", xlab = "SPI")
+```
+
+We see a high spike in the middle. It wants to be normally distributed. This makes sense from a soccer fan perspective, as there are a number of countries in the middle level of talent, as well as a number of powerhouses. This makes the data a bit left-skewed. There aren't many "completely horrible" teams. 
+
+```{r}
+hist(wc_forecasts$sim_wins, main = "Simulated Wins Histogram", xlab = "Simulated Wins")
+hist(wc_forecasts$sim_wins, breaks = 3/.25,  main = "Simulated Wins Histogram")
+```
+
+The first histogram made doesnt completely show what needs to be shown by the data. As such, I adjusted the number of bins to 12 to emphasize the large number of complete numbers. Let's dive deeper.
+
+```{r}
+sub_date1 = wc_forecasts[wc_forecasts$forecast_timestamp == "2018-07-15",]
+sub_date2 = wc_forecasts[wc_forecasts$forecast_timestamp == "2018-07-14",]
+sub_date3 = wc_forecasts[wc_forecasts$forecast_timestamp == "2018-07-07",]
+sub_date4 = wc_forecasts[wc_forecasts$forecast_timestamp == "2018-07-03",]
+sub_date5 = wc_forecasts[wc_forecasts$forecast_timestamp == "2018-06-28",]
+sub_date6 = wc_forecasts[wc_forecasts$forecast_timestamp == "2018-06-24",]
+sub_date7 = wc_forecasts[wc_forecasts$forecast_timestamp == "2018-06-19",]
+
+df = data.frame("Dates" = unique(wc_forecasts$forecast_timestamp), 
+                "Unique Values" = c(toString(unique(sub_date1$sim_wins)), toString(unique(sub_date2$sim_wins)),
+                                    toString(unique(sub_date3$sim_wins)), toString(unique(sub_date4$sim_wins)),
+                                    toString(unique(sub_date5$sim_wins)), toString(unique(sub_date6$sim_wins)),
+                                    toString(unique(sub_date7$sim_wins))))
+                                    
+                                    
+
+datatable(df)
+```
+
+As we can see from of table, the two earliest dates have decimal places, while the later five dates are whole numbers. This is something interesting to note about the data. 
+
+
+## Results 
+Lets take a looks at which continent has the highest SPI's. 
+
+```{r}
+country_spi_df = data.frame("Country" = unique(wc_forecasts$team))
+country_spi_df$score = 0
+country_spi_df$group = "O"
+country_spi_df$goal_diff = 0
+country_spi_df$sim_wins = 0
+for(i in 1:nrow(country_spi_df)){
+   temp_spi = subset(wc_forecasts, wc_forecasts$team %in% country_spi_df$Country[i])
+   country_spi_df$score[i] = mean(temp_spi$spi)
+   country_spi_df$group[i] = temp_spi$group[1]
+   country_spi_df$goal_diff[i] = mean(temp_spi$sim_goal_diff)
+   country_spi_df$sim_wins[i] = sum(temp_spi$sim_wins)
+   
+}
+
+
+library(ggplot2)
+library(dplyr)
+require(maps)
+require(viridis)
+theme_set(
+  theme_void()
+  )
+world_map <- map_data("world")
+
+world_map$score = 0
+for (i in 1:nrow(country_spi_df)){
+  print(i)
+  if (country_spi_df$Country[i] == "England"){
+    world_map[(world_map$region == "UK" & world_map$subregion == "Great Britain"),]$score = country_spi_df$score[i]
+  }
+  else{
+    world_map[world_map$region == country_spi_df$Country[i],]$score = country_spi_df$score[i]
+  }
+}
+
+for (i in 1:nrow(world_map)){
+  if (world_map$score[i] == 0){
+  world_map$score[i] = NaN
+}
+}
+
+ggplot(world_map, aes(x = long, y = lat, group = group)) +
+  geom_polygon(aes( group = group, fill = score)) +
+  xlab("Longitude") + ylab("Latitude") +
+    ggtitle("World Map")
+```
+
+The map above shows not only which countries made the World Cup in 2018, but also colors them by their average SPI for each of the projections done by fivethirtyeight. The lighter the color, the better the country. As we can see, African countries that made it were not very good. Niether were North American countries (Mexico). The samge goes for Austrialia and Asia. The best countries come from South America and Europe. This is interesting given the sizes of the countries. America, Canada and Russia all do not have high SPI scores, while England, Spain, Italy, Germany, and other small European countries do. There has been much talk over the years about why this is. In terms of America, the general consensus is that it is a result of the dimished importance and glory associated with soccer in the country. 
+
+
+```{r}
+library(treemapify)
+library(ggplot2)
+library(ggplotify)
+
+# plot
+treeMapCoordinates <- treemapify(country_spi_df,
+                                 area = "score",
+                                 subgroup = "group",
+                                 subgroup2 = "Country")
+
+ggplot(country_spi_df, aes(area = score, fill = group, label = Country,
+                subgroup = group)) +
+  geom_treemap() +
+  geom_treemap_subgroup_border() +
+  geom_treemap_subgroup_text(place = "centre", grow = T, alpha = 0.5, colour =
+                             "black", fontface = "italic", min.size = 0) +
+  geom_treemap_text(colour = "white", place = "topleft", reflow = T) +  ggtitle("SPI Breakdown by Group")
+```
+
+We can see from the treemap that the worst group is group A by SPI. Additionally, we can see that groups D, E, and B are the best groups. F and C are also good, while H and H are better than A but not as good as the rest. The subgroups of pretty much all of the groups are the same. Two temas that are noticably better than the others. Group H appears to be the most even group, SPI wise. The biggest point here is that there is no "Group of Death", where there are three powerhouse teams and only two will advance. 
+
+Lets take a look at how the simulations showed they would do in terms of average goal difference throughout all of the simulations
+
+```{r}
+str(country_spi_df)
+country_spi_df$goal_diff2 = country_spi_df$goal_diff + (min(country_spi_df$goal_diff)*-1)+1
+treeMapCoordinates <- treemapify(country_spi_df,
+                                 area = "goal_diff2",
+                                 subgroup = "group",
+                                 subgroup2 = "Country")
+
+ggplot(country_spi_df, aes(area = goal_diff2, fill = group, label = Country,
+                subgroup = group)) +
+  geom_treemap() +
+  geom_treemap_subgroup_border() +
+  geom_treemap_subgroup_text(place = "centre", grow = T, alpha = 0.5, colour =
+                             "black", fontface = "italic", min.size = 0) +
+  geom_treemap_text(colour = "white", place = "topleft", reflow = T) +  ggtitle("Average Goal Differential by Group")
+```
+
+and now by simulated wins 
+```{r}
+country_spi_df$sim_wins2 = country_spi_df$sim_wins +1
+
+ggplot(country_spi_df, aes(area = sim_wins2, fill = group, label = Country,
+                subgroup = group)) +
+  geom_treemap() +
+  geom_treemap_subgroup_border() +
+  geom_treemap_subgroup_text(place = "centre", grow = T, alpha = 0.5, colour =
+                             "black", fontface = "italic", min.size = 0) +
+  geom_treemap_text(colour = "white", place = "topleft", reflow = T) +  ggtitle("Simulated Wins Projections by Group")
+```
+
+What we can gleen from these three treemaps is that SPI is not an end-all be-all. By SPI, groups D, B, and E are the best overall groups. By goal difference, only B is one of the top three. However, in the average wins projected via fivethirtyeight simulations shows that group as the worst group overall. It accounts for the least amount of total projected wins in the seven projections. Meanwhile, group A looks to be the best overall group. It is projected to have one of the highest goal differentials, as well as the most wins overall. Additionally, C ends up showing better in goal differential than SPI and simulated wins. 
+
+We can also see that the projections now distinguish teams by skill level more. Looking back at group B, we originally saw an even distribution by SPI breakdown. We also see that the average goal differential for each team shows B as one of the better teams. However, we see that total wins does not show them as well. This means the teams will not advance far along but will perform well in the games they win and only lose by a low margin (relative. For the chart, the goal differentials were all made to be at least 1.) The notion of SPI not showing the power of some teams and weakness of others appears throughout the Total Projected Goals by Group graphic. Look at group D for an example. The SPI Breakdown by Group has D as fairly evenly distributed. However, total projected wins shows that Crotia and Nigeria dominate the group. Argentina progresses to the group stages a fair amount as well. Iceland, however, does not progress as a result of the strong teams in the group. 
+
+Based on this, lets build a model few models to predict if a given team makes it out of the group stage or not. First, let's change making it out or not to 1 or 0. The early projections had a probability in for whether or not a team would make the Round of 16. This will be adjusted to binary and logistic regression will be used. 
+
+```{r}
+unique(wc_forecasts$make_round_of_16)
+for (i in 1:nrow(wc_forecasts)){
+  if (wc_forecasts$make_round_of_16[i] >=0.5){
+    wc_forecasts$make_round_of_16[i] = 1 
+  }
+  else{
+    wc_forecasts$make_round_of_16[i] = 0
+  }
+}
+unique(wc_forecasts$make_round_of_16)
+```
+
+Now, we will construct the models. 
+
+```{r}
+library(InformationValue) 
+library(PRROC)
+# split for test and train
+smp_size <- floor(0.6 * nrow(wc_forecasts))
+set.seed(123)
+train_ind <- sample(seq_len(nrow(wc_forecasts)), size = smp_size)
+
+train <- wc_forecasts[train_ind, ]
+test <- wc_forecasts[-train_ind, ]
+
+#nrow(wc_forecasts)
+#nrow(train)
+#nrow(test)
+
+# build spi model
+spi_model <- glm(make_round_of_16 ~spi,family=binomial(link='logit'),data=train)
+summary(spi_model)
+predicted <- plogis(predict(spi_model, test)) 
+optCutOff <- optimalCutoff(test$make_round_of_16, predicted)[1] # get optimal cutoff point
+misClassError(test$make_round_of_16, predicted, threshold = optCutOff)
+PRROC_obj_spi <- roc.curve(scores.class0 = predicted, weights.class0=test$make_round_of_16, curve=TRUE)
+plot(PRROC_obj_spi)
+table(test$make_round_of_16, predicted > 0.5)
+
+# build goal difference model
+gd_model <- glm(make_round_of_16 ~sim_goal_diff,family=binomial(link='logit'),data=train)
+summary(gd_model)
+predicted <- plogis(predict(gd_model, test)) 
+optCutOff <- optimalCutoff(test$make_round_of_16, predicted)[1] # get optimal cutoff point
+misClassError(test$make_round_of_16, predicted, threshold = optCutOff)
+PRROC_obj_dg <- roc.curve(scores.class0 = predicted, weights.class0=test$make_round_of_16, curve=TRUE)
+plot(PRROC_obj_dg)
+table(test$make_round_of_16, predicted > 0.5)
+
+# build wins model
+wins_model <- glm(make_round_of_16 ~sim_wins,family=binomial(link='logit'),data=train)
+summary(wins_model)
+predicted <- plogis(predict(wins_model, test)) 
+optCutOff <- optimalCutoff(test$make_round_of_16, predicted)[1] # get optimal cutoff point
+misClassError(test$make_round_of_16, predicted, threshold = optCutOff)
+PRROC_obj_wins <- roc.curve(scores.class0 = predicted, weights.class0=test$make_round_of_16, curve=TRUE)
+plot(PRROC_obj_wins)
+table(test$make_round_of_16, predicted > 0.5)
+
+#check AUC
+PRROC_obj_spi$auc
+PRROC_obj_dg$auc
+PRROC_obj_wins$auc
+
+```
+
+We can see that the goal differential model is the best model we've built, as it has an AUC of 0.9670689. The other two models are also show well, as SPI has an AUV of 0.9346405 and wins has an AUC of 0.9198089. The only area that goal difference does worse is in the False Positive Rate. Both SPI and Simulated Wins do better in this regard. All together, this means that the models that fivethirtyeight used to predict advancement into the Round of 16 put more emphasis on a team's predicted goal differential than their predicted wins or SPI. Since goal differential is so important to the models, let's see how goals scored versus goals against perform in models. 
+
+```{r}
+# goals for
+# build spi model
+gs_model <- glm(make_round_of_16 ~goals_scored,family=binomial(link='logit'),data=train)
+summary(gs_model)
+predicted <- plogis(predict(gs_model, test)) 
+optCutOff <- optimalCutoff(test$make_round_of_16, predicted)[1] # get optimal cutoff point
+misClassError(test$make_round_of_16, predicted, threshold = optCutOff)
+PRROC_obj_gf <- roc.curve(scores.class0 = predicted, weights.class0=test$make_round_of_16, curve=TRUE)
+plot(PRROC_obj_gf)
+table(test$make_round_of_16, predicted > 0.5)
+
+ga_model <- glm(make_round_of_16 ~goals_against,family=binomial(link='logit'),data=train)
+summary(ga_model)
+predicted <- plogis(predict(ga_model, test)) 
+optCutOff <- optimalCutoff(test$make_round_of_16, predicted)[1] # get optimal cutoff point
+misClassError(test$make_round_of_16, predicted, threshold = optCutOff)
+PRROC_obj_ga <- roc.curve(scores.class0 = predicted, weights.class0=test$make_round_of_16, curve=TRUE)
+plot(PRROC_obj_ga)
+table(test$make_round_of_16, predicted > 0.5)
+PRROC_obj_gf$auc
+PRROC_obj_ga$auc
+```
+
+We can see that the goals for model shows much better than the goals against model - it gets to the top of the chart faster than the goals against model. Additionally, there are less false positives. This means the gaols scored model predicted less teams to make that acutally didn't make it (according to fivethirtyeight projections) than the goals against model. Another reason that the goals for model is superior. This makes sense from a football standpoint, as a good team will dominate and be able to come back and score when they are losing in a game. However, a team with a bad offense will let up one goal and lose 1-0, never really having a chance to come back and win. The fivethirtyeight models work this way as well. 
+
+## Moving Forward
+
+I would like to continue this study by integrating the actual results of the 2018 World Cup. We mentioned that the winner was France but they only showed fairly well in the predictions. Additionally, Spain was an interesting team, as they lost early on. The SPI breakdown showed them in favor, as did the goals difference model. However, fivethirtyeight projected Spain to have viewer wins relative to teams that had similar SPI's. This ended up happening, as Spain lost in the early stages of the tournament. Additionally, I would like to dive into what makes certain countries better than others. Whether that be Football heritage, population, coaching, etc. I have my own opinions as a fan but I would like some concrete evidence from data. 
+
+
+```{r}
+# tree stuff
+library(rpart)
+library(rpart.plot)
+library(maptree)
+tspi <- rpart(make_round_of_16~ spi, wc_forecasts)
+bestcp <- tspi$cptable[which.min(tspi$cptable[,"xerror"]),]
+leaves = which(tspi$cptable[,"CP"] == bestcp["CP"])
+tspi2 = clip.rpart(tspi, cp=NULL, best=leaves)
+rpart.plot(tspi2)
+printcp(tspi2)
+(1 - (0.24992* 0.38218))*100
+
+
+
+tsgd <- rpart(make_round_of_16~ sim_goal_diff, wc_forecasts)
+bestcp <- tsgd$cptable[which.min(tsgd$cptable[,"xerror"]),]
+leaves = which(tsgd$cptable[,"CP"] == bestcp["CP"])
+tsgd2 = clip.rpart(tsgd, cp=NULL, best=leaves)
+rpart.plot(tsgd2)
+printcp(tsgd2)
+(1 - (0.24992* 0.24148))*100
+
+tsw <- rpart(make_round_of_16~ sim_wins, wc_forecasts)
+bestcp <- tsw$cptable[which.min(tsw$cptable[,"xerror"]),]
+leaves = which(tsw$cptable[,"CP"] == bestcp["CP"])
+tsw2 = clip.rpart(tsw, cp=NULL, best=leaves)
+rpart.plot(tsw2)
+printcp(tsw2)
+(1 - (0.24992* 0.43132))*100
+
+
+```
+
+```{r}
+library(caret)
+ran <- sample(1:nrow(wc_forecasts), 0.6 * nrow(wc_forecasts)) 
+norm <-function(x) { (x -min(x))/(max(x)-min(x))   }
+
+#wc_forecasts$make_round_of_16 = as.factor(wc_forecasts$make_round_of_16)
+
+#### SPI
+wc_forecasts_norm <- as.data.frame(norm(wc_forecasts$spi))
+wc_train <-as.data.frame( wc_forecasts_norm[ran,])
+wc_test <- as.data.frame(wc_forecasts_norm[-ran,])
+WC_target_c <- wc_forecasts$make_round_of_16[ran]
+WC_test_c <- wc_forecasts$make_round_of_16[-ran]
+spi_Df_knn = data.frame(x = wc_train$`wc_forecasts_norm[ran, ]`, "y" = WC_target_c)
+ctrl <- trainControl(method="repeatedcv",repeats = 3) 
+knnFit1 <- train(y ~ ., data = spi_Df_knn, method = "knn", trControl = ctrl, preProcess = c("center","scale"), tuneLength = 20)
+pr1 <- knn(wc_train,wc_test,cl=WC_target_c,k=knnFit1$bestTune[1]$k)
+spitab <- table(pr1,WC_test_c)
+accuracy <- function(x){sum(diag(x)/(sum(rowSums(x)))) * 100}
+accuracy(spitab)
+spitab
+plot(pr)
+### goal diff
+wc_forecasts_norm_gd <- as.data.frame(norm(wc_forecasts$sim_goal_diff))
+wc_traindg <-as.data.frame( wc_forecasts_norm_gd[ran,])
+wc_testgd <- as.data.frame(wc_forecasts_norm_gd[-ran,])
+WC_target_cgd <- wc_forecasts$make_round_of_16[ran]
+WC_test_cgd <- wc_forecasts$make_round_of_16[-ran]
+gd_Df_knn = data.frame(x = wc_traindg$`wc_forecasts_norm_gd[ran, ]`, "y" = WC_target_cgd)
+ctrl <- trainControl(method="repeatedcv",repeats = 3) 
+knnFit2 <- train(y ~ ., data = gd_Df_knn, method = "knn", trControl = ctrl, preProcess = c("center","scale"), tuneLength = 20)
+prgd <- knn(wc_train,wc_test,cl=WC_target_c,k=knnFit2$bestTune[1]$k)
+gdtab <- table(prgd,WC_test_cgd)
+accuracy <- function(x){sum(diag(x)/(sum(rowSums(x)))) * 100}
+accuracy(gdtab)
+gdtab
+
+### sim_wins
+wc_forecasts_normsw <- as.data.frame(norm(wc_forecasts$sim_wins))
+wc_trainsw <-as.data.frame( wc_forecasts_normsw[ran,])
+wc_testsw <- as.data.frame(wc_forecasts_normsw[-ran,])
+WC_target_csw <- wc_forecasts$make_round_of_16[ran]
+WC_test_csw <- wc_forecasts$make_round_of_16[-ran]
+sw_Df_knn = data.frame(x = wc_trainsw$`wc_forecasts_normsw[ran, ]`, "y" = WC_target_csw)
+ctrl <- trainControl(method="repeatedcv",repeats = 3) 
+knnFit3 <- train(y ~ ., data = sw_Df_knn, method = "knn", trControl = ctrl, preProcess = c("center","scale"), tuneLength = 20)
+prsw <- knn(wc_trainsw,wc_testsw,cl=WC_target_csw,k=knnFit3$bestTune[1]$k)
+swtab <- table(prsw,WC_test_csw)
+accuracy <- function(x){sum(diag(x)/(sum(rowSums(x)))) * 100}
+accuracy(swtab)
+swtab
+```
+
+
